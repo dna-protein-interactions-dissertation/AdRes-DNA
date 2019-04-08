@@ -8,17 +8,17 @@ double precision, parameter :: PI=3.141592653589793238462
 double precision, parameter :: Dp = 2e-17
 double precision, parameter :: rI = 0.5e-6
 double precision, parameter :: db = 0.01e-6
-double precision, parameter :: dinf = 5e-6
-double precision, parameter :: d0= 0.1e-6
+double precision, parameter :: dinf = 1e-6
+double precision, parameter :: d0= 1e-6
 integer, parameter :: R = 100
 double precision, parameter :: dt = 0.8e-6
 double precision, parameter :: b = 60e-9
 double precision, parameter :: sigma = 1.2e-9
 double precision, parameter :: kB = 1.4e-23
 double precision, parameter :: T = 300
-double precision, parameter :: vs = 1
+double precision, parameter :: vs = 0.001
 integer, parameter :: s = 3
-integer, parameter :: Z = 5
+integer, parameter :: Z = 2
 
 double precision, dimension(3) :: sphere, p, midb
 double precision, dimension(2) :: seed
@@ -27,15 +27,16 @@ double precision, dimension(s**2, 3) :: newc, newsp
 double precision, allocatable, dimension(:, :) :: beads, springs, buffer, spbuffer
 integer, dimension(R) :: resolutions = spread(0, 1, R)
 double precision :: min_distance, avrad, drag, k, suml=0
-logical :: sts=.TRUE.
+logical :: sts
 
-integer :: i, j, x, tot, jx, jx_1, minj, time, j1, jN, ebcount, m, a, rA, rB
+integer :: i, j, x, tot, jx, jx_1, minj, time, j1, jN, ebcount, m, a, rA, rB, w
 
 ! INITIALIZATION
 ! q holds information on boundary beads
 ! r holds information on all beads
 ! springs holds information on the springs and associated timescales + radii
 
+sts = .TRUE.
 
 call FJC([real(0,8), real(0, 8), real(0, 8)], R, s*b, q(:, 1:3))
 
@@ -48,16 +49,19 @@ allocate(springs(R, 3))
 allocate(buffer(R+1, 10))
 allocate(spbuffer(R, 3))
 
+time = 0
 beads = q
 springs = spread([double precision :: s**4, b*s, sigma*s**2], 1, R)
 
 midb = q(51, 1:3)
 call random_number(seed)
-seed = 2*PI*seed
+seed(1) = 2*PI*seed(1)
+seed(2) = acos(2*seed(2) - 1)
 sphere = [d0*cos(seed(1))*sin(seed(2)), d0*sin(seed(1))*sin(seed(2)), d0*cos(seed(2))]
 p = midb + sphere
 
 do while (sts)
+	time = time +1
 	do x=1, size(springs, 1)-1
 		jx = int(springs(x, 1))
 		jx_1 = int(springs(x+1, 1))
@@ -78,9 +82,9 @@ do while (sts)
 			if (mod(time, jx_1)==0) then
 				k = 3*kB*T/(springs(x+1,2)**2)
 				if (jx_1 == s**4) then
-					beads(x+1, 1:3) = beads(x+1, 1:3) + (k/drag)*(beads(x,7:9) - beads(x+1, 7:9))*jx_1*dt
+					beads(x+1, 1:3) = beads(x+1, 1:3) + (k/drag)*(beads(x+2,7:9) - beads(x+1, 7:9))*jx_1*dt
 				else
-					beads(x+1, 1:3) = beads(x+1, 1:3) + (k/drag)*(beads(x,4:6) - beads(x+1, 4:6))*jx_1*dt
+					beads(x+1, 1:3) = beads(x+1, 1:3) + (k/drag)*(beads(x+2,4:6) - beads(x+1, 4:6))*jx_1*dt
 				end if
 			end if
 		else
@@ -157,6 +161,7 @@ do while (sts)
 		! spring is currently in low resolution - check to see if we should zoom in
 			if (norm2(q(a, 1:3) - p) < rI .OR. norm2(q(a+1,1:3) - p) < rI) then
 				! Introduce new beads using MH algorithm 
+				print*, "zooming in", a, time
 				call findloc(beads(:, 1), q(a, 1), size(beads(:, 1), 1), rA)
 				call findloc(beads(:, 1), q(a+1, 1), size(beads(:, 1), 1), rB)
 				call mh_chain(q(a, 1:3), q(a+1, 1:3), s, newc)
@@ -187,6 +192,7 @@ do while (sts)
 		else if (resolutions(a)==1) then
 			if (norm2(q(a, 1:3) - p) > Z*rI .AND. norm2(q(a+1, 1:3) - p) > Z*rI) then
 				! zoom out and delete beads as necessary
+				print*, "zooming out", a, time
 				call findloc(beads(:, 1), q(a, 1), size(beads(:, 1), 1), rA)
 				call findloc(beads(:, 1), q(a+1, 1), size(beads(:, 1), 1), rB)
 				deallocate(buffer)
@@ -250,9 +256,9 @@ subroutine FJC(start, n, r, chain)
 	
 	do i=2, n+1
 		call random_number(seed)
-		lambda = acos(2*seed(1) - 1) - (PI/2)
-		phi = 2*PI*seed(2)
-		sphere = [r*cos(lambda)*cos(phi), r*cos(lambda)*sin(phi), r*sin(lambda)]
+		lambda = 2*PI*seed(1)
+		phi = acos(2*seed(2) - 1)
+		sphere = [r*cos(lambda)*cos(phi), r*cos(phi)*sin(lambda), r*sin(phi)]
 		chain(i, :) = chain(i-1, :) + sphere
 	end do
 	
